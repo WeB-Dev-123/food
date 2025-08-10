@@ -1,21 +1,20 @@
-// Simuleret API – senere bytter du baseUrl + fetch ud med rigtig backend
-export type ApiMenuItem = { id: string; name: string; price: number };
+// services/api.ts
 
-export async function getMenu(): Promise<ApiMenuItem[]> {
-  // Simuler netværk
-  await new Promise(r => setTimeout(r, 400));
-  return [
-    { id: 'b1', name: 'Cheeseburger', price: 65 },
-    { id: 'p1', name: 'Pepperoni Pizza', price: 95 },
-    { id: 's1', name: 'Kyllingesalat', price: 79 },
-  ];
+// Vigtigt: 10.0.2.2 bruges af Android-emulatoren som "localhost"
+const baseUrl = 'http://10.0.2.2:3000';
+
+export async function getMenu() {
+  const r = await fetch(`${baseUrl}/menu`);
+  if (!r.ok) throw new Error('menu failed');
+  return r.json();
 }
 
-export async function submitOrder(payload: {
-  lines: { id: string; qty: number }[];
-  total: number;
-}) {
-  await new Promise(r => setTimeout(r, 600));
-  // Returnér et fiktivt ordre-id
-  return { orderId: Math.random().toString(36).slice(2, 8).toUpperCase() };
+export async function submitOrder(payload: { lines:{id:string;qty:number}[]; total:number }) {
+  const r = await fetch(`${baseUrl}/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error('order failed');
+  return r.json() as Promise<{ orderId: string }>;
 }

@@ -7,6 +7,7 @@ import MenuScreen from './frontend/screens/MenuScreen';
 import CartScreen from './frontend/screens/CartScreen';
 import { RootStackParamList } from './frontend/types/Navigation';
 import { CartProvider, useCart } from './frontend/contexts/CartContext';
+import OrderStatusScreen from './frontend/screens/OrderStatusScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -25,6 +26,7 @@ function AppNav() {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Menu" component={MenuScreen} />
         <Stack.Screen name="Cart" component={CartScreen} />
+        <Stack.Screen name="OrderStatus" component={OrderStatusScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -8,29 +8,32 @@ export default function CartScreen({ navigation }: any) {
   const { state, inc, dec, clear, total } = useCart();
   const [busy, setBusy] = useState(false);
 
-  const onCheckout = async () => {
-    if (!state.lines.length) {
-      Alert.alert('Tom kurv', 'Læg noget i kurven først.');
-      return;
-    }
-    try {
-      setBusy(true);
-      const payload = {
-        lines: state.lines.map(l => ({ id: l.item.id, qty: l.qty })),
-        total,
-      };
-      const res = await submitOrder(payload); // kalder backend /orders
-      clear();
-      Alert.alert('Tak for din ordre', `Ordre-ID: ${res.orderId}`, [
-        { text: 'OK', onPress: () => navigation.popToTop() },
-      ]);
-    } catch (e) {
-      Alert.alert('Fejl', 'Bestilling gik ikke igennem. Prøv igen.');
-      console.error(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+ const onCheckout = async () => {
+  if (!state.lines.length) {
+    Alert.alert('Tom kurv', 'Læg noget i kurven først.');
+    return;
+  }
+  try {
+    setBusy(true);
+    const payload = {
+      lines: state.lines.map(l => ({ id: l.item.id, qty: l.qty })),
+      total,
+    };
+    const res = await submitOrder(payload);
+    const id = res.orderId;
+
+    clear(); // tøm kurven efter succes
+
+    // Navigér til status-skærmen i stedet for Alert
+    (navigation as any).navigate('OrderStatus', { orderId: id });
+  } catch (e) {
+    Alert.alert('Fejl', 'Bestilling gik ikke igennem. Prøv igen.');
+    console.error(e);
+  } finally {
+    setBusy(false);
+  }
+};
+
 
   return (
     <View style={{ flex: 1, padding: 16, gap: 12 }}>

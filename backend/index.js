@@ -1,6 +1,7 @@
 // backend/index.js
 const { PrismaClient } = require('@prisma/client');
 const createApp = require('./app');
+require('dotenv').config();
 
 const prisma = new PrismaClient();
 const app = createApp(prisma);

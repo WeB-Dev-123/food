@@ -1,58 +1,76 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, Button, Alert } from 'react-native';
+// frontend/screens/OrderStatusScreen.tsx
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ActivityIndicator, Button } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import io, { Socket } from 'socket.io-client';
 import { RootStackParamList } from '../types/Navigation';
 import { getOrder } from '../api/api';
+
+// Android-emulator -> backend:
+const SOCKET_URL = 'http://10.0.2.2:3000';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderStatus'>;
 
 export default function OrderStatusScreen({ route, navigation }: Props) {
   const { orderId } = route.params;
-  const [data, setData] = useState<{status:string; total:number} | null>(null);
+  const [order, setOrder] = useState<{ status: string; total: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    let timer: NodeJS.Timeout;
+    let mounted = true;
 
-    async function fetchOnce() {
+    // 1) Hent initial ordre én gang
+    (async () => {
       try {
         const o = await getOrder(orderId);
-        if (!alive) return;
-        setData({ status: o.status, total: o.total });
-      } catch (e) {
-        if (!alive) return;
-        Alert.alert('Fejl', 'Kunne ikke hente ordrestatus.');
+        if (mounted) setOrder({ status: o.status, total: o.total });
       } finally {
-        if (alive) setLoading(false);
+        if (mounted) setLoading(false);
       }
-    }
+    })();
 
-    fetchOnce();
-    timer = setInterval(fetchOnce, 10000);
+    // 2) Åbn socket og join ordre-room
+    const s = io(SOCKET_URL, { transports: ['websocket'] });
+    socketRef.current = s;
 
+    s.on('connect', () => {
+      s.emit('order:join', { orderId });
+    });
+
+    s.on('order:update', (p: { orderId: string; status: string }) => {
+      if (p?.orderId === orderId) {
+        setOrder(prev => (prev ? { ...prev, status: p.status } : prev));
+      }
+    });
+
+    // 3) Ryd op ved unmount
     return () => {
-      alive = false;
-      clearInterval(timer);
+      mounted = false;
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
   }, [orderId]);
 
-  if (loading) {
+  if (loading || !order) {
     return (
-      <View style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />
       </View>
     );
   }
 
   return (
-    <View style={{ flex:1, padding:16, gap:12 }}>
-      <Text style={{ fontSize:18, fontWeight:'700' }}>Ordre: {orderId}</Text>
-      <Text style={{ fontSize:16 }}>Status: {data?.status}</Text>
-      <Text style={{ fontSize:16 }}>Total: {data?.total} kr</Text>
+    <View style={{ flex: 1, padding: 16, gap: 12 }}>
+      <Text style={{ fontSize: 18, fontWeight: '700' }}>Ordre: {orderId}</Text>
+      <Text style={{ fontSize: 16 }}>Status: {order.status}</Text>
+      <Text style={{ fontSize: 16 }}>Total: {order.total} kr</Text>
 
-      <Button title="Opdater nu" onPress={() => { setLoading(true); }} />
       <Button title="Til forsiden" onPress={() => navigation.popToTop()} />
     </View>
   );
 }
+
+

@@ -35,3 +35,9 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# prisma undtagelse fra git................
+backend/prisma/dev.db
+backend/prisma/dev.db-wal
+backend/prisma/dev.db-shm
+backend/prisma/dev.db-journal

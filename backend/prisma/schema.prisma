@@ -1,28 +1,50 @@
-datasource db { provider = "sqlite"; url = "file:./dev.db" }
-generator client { provider = "prisma-client-js" }
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Restaurant {
+  id        String     @id @default(cuid())
+  name      String
+  adminKey  String     @unique   // simpelt “kodeord” til admin
+  items     MenuItem[]
+  orders    Order[]
+  createdAt DateTime   @default(now())
+}
 
 model MenuItem {
-  id    String   @id @default(cuid())
-  code  String   @unique
-  name  String
-  price Int
-  lines OrderLine[]
+  id           String     @id @default(cuid())
+  code         String
+  name         String
+  price        Int
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId String
+  lines        OrderLine[]
+
+  @@unique([restaurantId, code]) // code er unik per restaurant
 }
 
 model Order {
-  id        String      @id @default(cuid())
-  orderId   String      @unique
-  total     Int
-  status    String
-  createdAt DateTime    @default(now())
-  lines     OrderLine[]
+  id           String     @id @default(cuid())
+  orderId      String     @unique
+  total        Int
+  status       String
+  createdAt    DateTime   @default(now())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId String
+  lines        OrderLine[]
 }
 
 model OrderLine {
   id      String   @id @default(cuid())
   qty     Int
-  itemId  String
   item    MenuItem @relation(fields: [itemId], references: [id])
-  orderId String
+  itemId  String
   order   Order    @relation(fields: [orderId], references: [id])
+  orderId String
 }

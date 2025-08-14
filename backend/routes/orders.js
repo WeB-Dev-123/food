@@ -1,20 +1,51 @@
 // backend/routes/orders.js
 const express = require('express');
+const { z } = require('zod');
+const adminKey = require('../middleware/adminKey')(process.env.ADMIN_KEY || 'dev_super_secret');
+
+
+const OrderSchema = z.object({
+  lines: z.array(z.object({
+    id: z.string().min(1),   // kan være code ELLER item.id
+    qty: z.number().int().positive(),
+  })).min(1),
+  total: z.number().int().nonnegative(),
+});
 
 module.exports = (prisma) => {
   const router = express.Router();
 
-  // POST /orders
-  router.post('/', async (req, res) => {
-    try {
-      const { lines, total } = req.body || {};
-      if (!Array.isArray(lines) || !lines.length) {
-        return res.status(400).json({ error: 'lines required' });
-      }
+  // Hjælp: find restaurant (via ?r eller ?restaurantId, ellers første)
+  async function resolveRestaurant(req) {
+    const r = String(req.query.r || req.query.restaurantId || '');
+    if (r) {
+      const found = await prisma.restaurant.findUnique({ where: { id: r } });
+      if (found) return found;
+    }
+    return prisma.restaurant.findFirst();
+  }
 
+  // POST /orders — opret ordre for den givne restaurant
+  router.post('/', async (req, res, next) => {
+    console.log('[POST /orders] body =', JSON.stringify(req.body));
+    try {
+      const parsed = OrderSchema.safeParse(req.body);
+      if (!parsed.success) {
+        console.log(parsed, "virker ikke!")
+        return res.status(400).json({ error: 'invalid', issues: parsed.error.issues });
+      }
+      const { lines, total } = parsed.data;
+
+      const restaurant = await resolveRestaurant(req);
+      if (!restaurant) return res.status(500).json({ error: 'no restaurant found' });
+
+      // slå varer op KUN inden for samme restaurant
       const ids = lines.map(l => String(l.id));
       const items = await prisma.menuItem.findMany({
-        where: { OR: [{ code: { in: ids } }, { id: { in: ids } }] },
+        where: {
+          restaurantId: restaurant.id,
+          OR: [{ code: { in: ids } }, { id: { in: ids } }],
+        },
       });
 
       const missing = lines.filter(l => !items.find(i => i.code === l.id || i.id === l.id));
@@ -25,8 +56,9 @@ module.exports = (prisma) => {
       const created = await prisma.order.create({
         data: {
           orderId,
-          total: Number(total) || 0,
+          total,
           status: 'NEW',
+          restaurantId: restaurant.id,          // ← VIGTIGT
           lines: {
             create: lines.map(l => {
               const item = items.find(i => i.code === l.id || i.id === l.id);
@@ -36,20 +68,30 @@ module.exports = (prisma) => {
         },
       });
 
+      // Realtime: ny ordre
+      const io = req.app.get('io');
+      io.emit('order:new', {
+        orderId: created.orderId,
+        total: created.total,
+        status: created.status,
+      });
+
       res.json({ orderId: created.orderId });
-    } catch (e) {
-      console.error('[POST /orders] ERROR', e);
-      res.status(500).json({ error: 'order failed' });
-    }
+    } catch (e) { next(e); }
   });
 
-  // GET /orders
-  router.get('/', async (_req, res) => {
+  // GET /orders — liste ordrer for restaurant
+  router.get('/', adminKey, async (req, res) => {
     try {
+      const restaurant = await resolveRestaurant(req);
+      if (!restaurant) return res.status(500).json({ error: 'no restaurant found' });
+
       const orders = await prisma.order.findMany({
+        where: { restaurantId: restaurant.id },
         orderBy: { createdAt: 'desc' },
-        include: { lines: true },
+        include: { lines: { include: { item: true } } },
       });
+
       res.json(orders);
     } catch (e) {
       console.error('[GET /orders] ERROR', e);
@@ -57,7 +99,7 @@ module.exports = (prisma) => {
     }
   });
 
-  // GET /orders/:id
+  // GET /orders/:id — én ordre
   router.get('/:id', async (req, res) => {
     try {
       const o = await prisma.order.findUnique({
@@ -72,19 +114,27 @@ module.exports = (prisma) => {
     }
   });
 
-  // PATCH /orders/:id
-  router.patch('/:id', async (req, res) => {
+  // PATCH /orders/:id — ændr status
+  router.patch('/:id', adminKey, async (req, res) => {
     try {
       const allowed = ['NEW', 'ACCEPTED', 'REJECTED', 'READY', 'COMPLETED'];
-      const { status } = req.body || {};
-      if (!allowed.includes(status)) return res.status(400).json({ error: 'bad status', allowed });
-
+      const { status } = (req.body || {});
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ error: 'bad status', allowed });
+      }
       const updated = await prisma.order.update({
         where: { orderId: req.params.id },
         data: { status },
       }).catch(() => null);
 
       if (!updated) return res.sendStatus(404);
+
+      const io = req.app.get('io');
+      io.to(`order:${req.params.id}`).emit('order:update', {
+        orderId: req.params.id,
+        status: updated.status,
+      });
+
       res.json(updated);
     } catch (e) {
       console.error('[PATCH /orders/:id] ERROR', e);
